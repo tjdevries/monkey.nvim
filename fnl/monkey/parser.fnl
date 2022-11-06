@@ -244,9 +244,7 @@
      _ (parser.next-token)
      expr (parse-expression prec-enum.PREFIX)]
 
-    (if (= expr nil)
-     nil
-     (PrefixExpression tok op expr))))
+    (if expr (PrefixExpression tok op expr))))
 
   (var prefix-fns
    {
