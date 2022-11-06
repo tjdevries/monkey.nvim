@@ -225,7 +225,7 @@
      nil
      (InfixExpression tok left op right))))
 
-  (var infix-fns
+  (local infix-fns
    {
     :Plus parse-infix-expression
     :Minus parse-infix-expression
@@ -237,13 +237,16 @@
     :GT parse-infix-expression})
 
   (fn parse-prefix-expression []
-   (var tok parser.curToken)
-   (var op parser.curToken.lit)
-   (parser.next-token)
-   (var expr (parse-expression prec-enum.PREFIX))
-   (if (= expr nil)
-    nil
-    (PrefixExpression tok op expr)))
+   (let
+    [
+     tok parser.curToken
+     op parser.curToken.lit
+     _ (parser.next-token)
+     expr (parse-expression prec-enum.PREFIX)]
+
+    (if (= expr nil)
+     nil
+     (PrefixExpression tok op expr))))
 
   (var prefix-fns
    {
@@ -252,26 +255,29 @@
     :Ident (fn [p] (Identifier p.curToken p.curToken.lit))
     :Integer (fn [p] (Number p.curToken p.curToken.lit))})
 
+  (fn parse-prefix-inner [prec left]
+   (if (or
+        (peek-type-is :Semicolon)
+        (>= prec (peek-prec)))
+    left
+    (let
+     [infix (. infix-fns parser.peekToken.ty)]
+     (if (not infix)
+      left
+      (do
+       (parser.next-token)
+       (parse-prefix-inner prec (infix left)))))))
+
   (set parse-expression
    (fn [prec]
-    (var prefix (. prefix-fns parser.curToken.ty))
-    ;; TODO: This could probably be a match-try as well
-    (if (= prefix nil)
-      (do
-       (make-error "Failed to parse expression: %s" (vim.inspect parser)) 
-       nil)
-      (do
-       (var left (prefix parser))
-       (while (and (not (peek-type-is :Semicolon)) (< prec (peek-prec)))
-        (let
-         [infix (. infix-fns parser.peekToken.ty)]
-         (if (= infix nil)
-          (lua "break")
-          (do
-           (parser.next-token)
-           (set left (infix left))))))
+    (let
+     [prefix (. prefix-fns parser.curToken.ty)]
 
-       left))))
+     (if (not prefix)
+      (make-error "Failed to parse expression: %s" (vim.inspect parser))
+      (let
+       [left (prefix parser)]
+       (parse-prefix-inner prec left))))))
 
   (fn ok-expression [args prec]
     (var expr (parse-expression prec))

@@ -57,5 +57,6 @@ describe([[Parser]], function()
 
   it("can do infix", function()
     check_single_expr("1 + 5", "InfixExpression", "(1 + 5);")
+    -- check_single_expr("1 + 5 * 10 + 2", "InfixExpression", "((1 + (5 * 10)) + 2);")
   end)
 end)
