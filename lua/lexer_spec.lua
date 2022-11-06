@@ -7,9 +7,9 @@ describe("lexer", function()
     local input = "=+("
 
     eq({
-      { ty = "Assign", lit = "=" },
-      { ty = "Plus", lit = "+" },
-      { ty = "LeftParen", lit = "(" },
+      { ty = "lex-Assign", lit = "=" },
+      { ty = "lex-Plus", lit = "+" },
+      { ty = "lex-LeftParen", lit = "(" },
     }, lexer(input))
   end)
 
@@ -21,16 +21,16 @@ describe("lexer", function()
     ]]
 
     local lexed = lexer(input)
-    eq({ ty = "Ident", lit = "five" }, lexed[2])
-    eq({ ty = "Integer", lit = "5" }, lexed[4])
-    eq({ ty = "Function", lit = "fn" }, lexed[9])
+    eq({ ty = "lex-Identifier", lit = "five" }, lexed[2])
+    eq({ ty = "lex-Integer", lit = "5" }, lexed[4])
+    eq({ ty = "lex-Function", lit = "fn" }, lexed[9])
   end)
 
   it("TestPeeking", function()
     local lexed = lexer "== = != !"
-    eq({ ty = "Eq", lit = "==" }, lexed[1])
-    eq({ ty = "Assign", lit = "=" }, lexed[2])
-    eq({ ty = "NotEq", lit = "!=" }, lexed[3])
-    eq({ ty = "Bang", lit = "!" }, lexed[4])
+    eq({ ty = "lex-Eq", lit = "==" }, lexed[1])
+    eq({ ty = "lex-Assign", lit = "=" }, lexed[2])
+    eq({ ty = "lex-NotEq", lit = "!=" }, lexed[3])
+    eq({ ty = "lex-Bang", lit = "!" }, lexed[4])
   end)
 end)

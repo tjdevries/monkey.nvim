@@ -2,28 +2,32 @@
 
 (local mod {})
 
-(local
- prec-enum
- {
-  :LOWEST 0
-  :EQUALS 1
-  :LESSGREATER 2
-  :SUM 3
-  :PRODUCT 4
-  :PREFIX 5
-  :CALL 6})
+(macro def-enum [name ...] 
+  `(var
+     ,name
+     ,(collect [i v (ipairs [...])]
+        (values (string.upper v) i))))
+
+(def-enum prec-enum
+  :LOWEST
+  :EQUALS
+  :LESSGREATER
+  :SUM
+  :PRODUCT
+  :PREFIX
+  :CALL)
 
 (local
  precedences
  {
-  :Eq prec-enum.EQUALS
-  :NotEq prec-enum.EQUALS
-  :LT prec-enum.LESSGREATER
-  :RT prec-enum.LESSGREATER
-  :Plus prec-enum.SUM
-  :Minus prec-enum.SUM
-  :Slash prec-enum.PRODUCT
-  :Asterisk prec-enum.PRODUCT})
+  :lex-Eq prec-enum.EQUALS
+  :lex-NotEq prec-enum.EQUALS
+  :lex-LT prec-enum.LESSGREATER
+  :lex-RT prec-enum.LESSGREATER
+  :lex-Plus prec-enum.SUM
+  :lex-Minus prec-enum.SUM
+  :lex-Slash prec-enum.PRODUCT
+  :lex-Asterisk prec-enum.PRODUCT})
 
 ;; lit: fn [data] -> string
 (var [stmt expr]
@@ -42,18 +46,18 @@
 (fn is-stmt [val] (= val.expr false))
 
 (fn PrefixExpression [tok op right]
- (assert (is-expr right))
+ (assert (is-expr right) "prefix-expression")
  (expr
-  :PrefixExpression
+  :expr-Prefix
   (fn [data] (string.format "%s%s" op (right:lit)))
   {:tok tok :op op :right right}))
 
 (fn InfixExpression [tok left op right]
- (assert (is-expr left))
- (assert (is-expr right))
+ (assert (is-expr left) "infix-expression left")
+ (assert (is-expr right) "infix-expression right")
 
  (expr
-  :InfixExpression
+  :expr-Infix
   (fn [data]
    (string.format
     "(%s %s %s)"
@@ -64,23 +68,23 @@
 
 (fn Number [tok val]
  (expr
-  :NumberExpr
+  :expr-Number
   (fn [data] data.val)
   {:tok tok :val (tonumber val)}))
 
 (fn Identifier [tok val]
- (assert (= (type val) "string"))
+ (assert (= (type val) "string") "identifier val")
 
  (expr
-  :IdentifierExpr
+  :expr-Identifier
   (fn [data] data.val)
   {:tok tok :val val}))
 
 (fn ExpressionStatement [tok expr]
- (assert (is-expr expr))
+ (assert (is-expr expr) "expression-stmt expr")
 
  (stmt
-  :ExpressionStatement
+  :stmt-Expression
   (fn [data] (string.format "%s;" (data.expr:lit)))
   {:tok tok :expr expr}))
 
@@ -90,17 +94,17 @@
  ;; (assert (is-expr val))
 
  (stmt
-  :ReturnStatement
+  :stmt-Return
   (fn [data] (string.format "return %s" (data.val:lit)))
   {:tok tok :val val}))
 
 
 (fn LetStatement [tok name val]
  ;; (assert (is-expr value))
- (assert (= name.ty :IdentifierExpr))
+ (assert (= name.ty :expr-Identifier))
 
  (stmt
-  :LetStatement
+  :stmt-Let
   (fn [data] (string.format "let %s = %s;" (data.name:lit) (data.val:lit)))
   {
    :tok tok
@@ -148,9 +152,10 @@
    (table.insert parser.errors (string.format ...))
    nil)
 
-  (fn cur-type-is [ty] (= parser.curToken.ty ty))
-  (fn cur-type-is-not [ty] (~= parser.curToken.ty ty))
-  (fn peek-type-is [ty] (= parser.peekToken.ty ty))
+  (fn cur-type? [ty] (= parser.curToken.ty ty))
+  (fn !cur-type? [ty] (not (cur-type? ty)))
+  (fn peek-type? [ty] (= parser.peekToken.ty ty))
+  (fn !peek-type? [ty] (not (peek-type? ty)))
 
   (fn peek-prec []
    (or
@@ -180,14 +185,14 @@
    (ok-if args (expect-peek ty)))
 
   (fn read-until [ty]
-   (while (and (cur-type-is-not ty) (cur-type-is-not :EndOfFile))
+   (while (and (!cur-type? ty) (!cur-type? :lex-EndOfFile))
     (parser.next-token)))
 
   (fn parse-return-statement []
    (match-try (values :ok [(parser.next-token)])
     (:ok args) (do
                 ;; todo: parse expression
-                (read-until :Semicolon)
+                (read-until :lex-Semicolon)
 
                 (ReturnStatement (unpack args)))
     (catch
@@ -195,18 +200,18 @@
 
   (fn parse-let-statement []
    (fn let-identifier [args]
-    (var name (expect-peek :Ident))
+    (var name (expect-peek :lex-Identifier))
     (ok-if args name (Identifier name name.lit)))
 
    (fn let-assign [args]
-    (ok-peek args :Assign))
+    (ok-peek args :lex-Assign))
 
    (match-try (values :ok [parser.curToken])
     (:ok args) (let-identifier args)
     (:ok args) (let-assign args)
     (:ok args) (do
                 ;; TODO Parse expression
-                (read-until :Semicolon)
+                (read-until :lex-Semicolon)
                 (LetStatement (unpack args)))
     (catch
      (:failed) nil)))
@@ -221,20 +226,19 @@
      prec (cur-prec)
      _ (parser.next-token)
      right (parse-expression prec)]
-    (if (= right nil)
-     nil
-     (InfixExpression tok left op right))))
+
+    (if right (InfixExpression tok left op right))))
 
   (local infix-fns
    {
-    :Plus parse-infix-expression
-    :Minus parse-infix-expression
-    :Slash parse-infix-expression
-    :Asterisk parse-infix-expression
-    :Eq parse-infix-expression
-    :NotEq parse-infix-expression
-    :LT parse-infix-expression
-    :GT parse-infix-expression})
+    :lex-Plus parse-infix-expression
+    :lex-Minus parse-infix-expression
+    :lex-Slash parse-infix-expression
+    :lex-Asterisk parse-infix-expression
+    :lex-Eq parse-infix-expression
+    :lex-NotEq parse-infix-expression
+    :lex-LT parse-infix-expression
+    :lex-GT parse-infix-expression})
 
   (fn parse-prefix-expression []
    (let
@@ -248,14 +252,14 @@
 
   (var prefix-fns
    {
-    :Bang parse-prefix-expression
-    :Minus parse-prefix-expression
-    :Ident (fn [p] (Identifier p.curToken p.curToken.lit))
-    :Integer (fn [p] (Number p.curToken p.curToken.lit))})
+    :lex-Bang parse-prefix-expression
+    :lex-Minus parse-prefix-expression
+    :lex-Identifier (fn [p] (Identifier p.curToken p.curToken.lit))
+    :lex-Integer (fn [p] (Number p.curToken p.curToken.lit))})
 
   (fn parse-prefix-inner [prec left]
    (if (or
-        (peek-type-is :Semicolon)
+        (peek-type? :lex-Semicolon)
         (>= prec (peek-prec)))
     left
     (let
@@ -285,7 +289,7 @@
    (match-try (values :ok [parser.curToken])
     (:ok args) (ok-expression args prec-enum.LOWEST)
     (:ok args) (do
-                (if (peek-type-is :Semicolon) (parser.next-token))
+                (if (peek-type? :lex-Semicolon) (parser.next-token))
                 (values :ok args))
     (:ok args) (ExpressionStatement (unpack args))
     (catch
@@ -293,14 +297,14 @@
 
   (fn parse-statement []
    (match parser.curToken.ty
-    :Let (parse-let-statement)
-    :Return (parse-return-statement)
+    :lex-Let (parse-let-statement)
+    :lex-Return (parse-return-statement)
     _ (parse-expression-statement)))
 
   (fn parse-program []
    (var statements [])
 
-   (while (~= parser.curToken.ty :EndOfFile)
+   (while (~= parser.curToken.ty :lex-EndOfFile)
     (var statement (parse-statement))
     (if statement
      (table.insert statements statement))

@@ -4,25 +4,25 @@
 (fn token-type [ty] (fn [lit] (token ty lit)))
 
 (macro literal [name lit]
-  `(var ,name (token ,(tostring name) ,lit)))
+  `(var ,name (token (.. "lex-" ,(tostring name)) ,lit)))
 
 ;; Token Types
 
 (var KEYWORDS
   {
-   :true :True
-   :false :False
-   :if :If
-   :else :Else
-   :return :Return
-   :fn :Function
-   :let :Let})
+   :true :lex-True
+   :false :lex-False
+   :if :lex-If
+   :else :lex-Else
+   :return :lex-Return
+   :fn :lex-Function
+   :let :lex-Let})
 
 
-(var Ident (token-type :Ident))
+(var Ident (token-type :lex-Identifier))
 
-(var Integer (token-type :Integer))
-(var Illegal (token-type :illegal))
+(var Integer (token-type :lex-Integer))
+(var Illegal (token-type :lex-Illegal))
 
 ;; Literal types
 (literal Assign "=")
@@ -68,7 +68,7 @@
 (fn ident-ty [ident]
   (if (. KEYWORDS ident)
     (. KEYWORDS ident)
-    :Ident))
+    :lex-Identifier))
 
 (fn lexer-read-identifier-text [lexer]
   (var position lexer.position)
