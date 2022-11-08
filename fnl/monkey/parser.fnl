@@ -2,7 +2,7 @@
 
 (local mod {})
 
-(macro def-enum [name ...] 
+(macro def-enum [name ...]
   `(var
      ,name
      ,(collect [i v (ipairs [...])]
@@ -30,33 +30,44 @@
   :lex-Asterisk prec-enum.PRODUCT})
 
 ;; lit: fn [data] -> string
-(var [stmt expr]
+(var [make-stmt make-expr]
  (do
   (fn node [ty lit expr data]
    (var obj {:ty ty :lit lit :expr expr})
    (each [key value (pairs data)] (tset obj key value))
    obj)
 
-  (fn stmt [ty lit data] (node ty lit false data))
-  (fn expr [ty lit data] (node ty lit true data))
+  (fn make-stmt [ty lit data] (node ty lit false data))
+  (fn make-expr [ty lit data] (node ty lit true data))
 
-  [stmt expr]))
+  [make-stmt make-expr]))
 
 (fn is-expr [val] (= val.expr true))
-(fn is-stmt [val] (= val.expr false))
+(fn is-stmt [val] (not val.expr))
 
 (fn PrefixExpression [tok op right]
  (assert (is-expr right) "prefix-expression")
- (expr
+ (make-expr
   :expr-Prefix
-  (fn [data] (string.format "%s%s" op (right:lit)))
+  (fn [data] (string.format "(%s%s)" op (right:lit)))
   {:tok tok :op op :right right}))
 
+(fn GroupedExpression [tok op val]
+ (assert (is-expr val) "grouped-expression")
+ (var something
+  (make-expr
+   :expr-Grouped
+   (fn [data] (string.format "%s" (val:lit)))
+   {:tok tok :op op :val val}))
+
+ something)
+
+
 (fn InfixExpression [tok left op right]
- (assert (is-expr left) "infix-expression left")
+ (assert (is-expr left) (string.format "infix-expression left: %s" (vim.inspect left)))
  (assert (is-expr right) "infix-expression right")
 
- (expr
+ (make-expr
   :expr-Infix
   (fn [data]
    (string.format
@@ -67,7 +78,7 @@
   {:tok tok :left left :op op :right right}))
 
 (fn Number [tok val]
- (expr
+ (make-expr
   :expr-Number
   (fn [data] data.val)
   {:tok tok :val (tonumber val)}))
@@ -75,25 +86,32 @@
 (fn Identifier [tok val]
  (assert (= (type val) "string") "identifier val")
 
- (expr
+ (make-expr
   :expr-Identifier
   (fn [data] data.val)
   {:tok tok :val val}))
 
-(fn ExpressionStatement [tok expr]
- (assert (is-expr expr) "expression-stmt expr")
+(fn Boolean [tok val]
+  (assert (= (type val) "boolean") "boolean val")
+  (make-expr
+    :expr-Boolean
+    (fn [data] data.val)
+    {:tok tok :val val}))
 
- (stmt
+(fn ExpressionStatement [tok val]
+ (assert (is-expr val) "expression-stmt expr")
+
+ (make-stmt
   :stmt-Expression
-  (fn [data] (string.format "%s;" (data.expr:lit)))
-  {:tok tok :expr expr}))
+  (fn [data] (string.format "%s;" (data.val:lit)))
+  {:tok tok :val val}))
 
 
 
 (fn ReturnStatement [tok val]
  ;; (assert (is-expr val))
 
- (stmt
+ (make-stmt
   :stmt-Return
   (fn [data] (string.format "return %s" (data.val:lit)))
   {:tok tok :val val}))
@@ -103,7 +121,7 @@
  ;; (assert (is-expr value))
  (assert (= name.ty :expr-Identifier))
 
- (stmt
+ (make-stmt
   :stmt-Let
   (fn [data] (string.format "let %s = %s;" (data.name:lit) (data.val:lit)))
   {
@@ -113,7 +131,7 @@
 
 
 (fn Program [statements]
- (stmt
+ (make-stmt
   :Program
   (fn [data]
    (table.concat
@@ -227,6 +245,10 @@
      _ (parser.next-token)
      right (parse-expression prec)]
 
+    ;; (if (= op :lex-Slash)
+    ;;  (error "SLASH"))
+    ;; (print op)
+
     (if right (InfixExpression tok left op right))))
 
   (local infix-fns
@@ -240,24 +262,44 @@
     :lex-LT parse-infix-expression
     :lex-GT parse-infix-expression})
 
+  (fn parse-grouped-expression []
+   (let
+    [
+     tok parser.curToken
+      op parser.curToken.lit
+      _ (parser.next-token)
+      val (parse-expression prec-enum.LOWEST)]
+
+    (var peeked (expect-peek :lex-RightParen))
+    (if val
+     (if peeked
+      (GroupedExpression tok op val)))))
+
   (fn parse-prefix-expression []
    (let
     [
      tok parser.curToken
      op parser.curToken.lit
      _ (parser.next-token)
-     expr (parse-expression prec-enum.PREFIX)]
+     val (parse-expression prec-enum.PREFIX)]
 
-    (if expr (PrefixExpression tok op expr))))
+    (if val (PrefixExpression tok op val))))
+
+  (fn parse-boolean-expression []
+    (let
+      [val (if (= parser.curToken.ty :lex-True) true false)]
+      (Boolean parser.curToken val)))
 
   (var prefix-fns
    {
     :lex-Bang parse-prefix-expression
     :lex-Minus parse-prefix-expression
     :lex-Identifier (fn [p] (Identifier p.curToken p.curToken.lit))
-    :lex-Integer (fn [p] (Number p.curToken p.curToken.lit))})
+    :lex-Integer (fn [p] (Number p.curToken p.curToken.lit))
+    :lex-LeftParen parse-grouped-expression
+    :lex-True parse-boolean-expression})
 
-  (fn parse-prefix-inner [prec left]
+  (fn parse-prefix* [prec left]
    (if (or
         (peek-type? :lex-Semicolon)
         (>= prec (peek-prec)))
@@ -268,7 +310,7 @@
       left
       (do
        (parser.next-token)
-       (parse-prefix-inner prec (infix left)))))))
+       (parse-prefix* prec (infix left)))))))
 
   (set parse-expression
    (fn [prec]
@@ -279,11 +321,11 @@
       (make-error "Failed to parse expression: %s" (vim.inspect parser))
       (let
        [left (prefix parser)]
-       (parse-prefix-inner prec left))))))
+       (parse-prefix* prec left))))))
 
   (fn ok-expression [args prec]
-    (var expr (parse-expression prec))
-    (ok-if args expr expr))
+    (var val (parse-expression prec))
+    (ok-if args val val))
 
   (fn parse-expression-statement []
    (match-try (values :ok [parser.curToken])
@@ -322,5 +364,8 @@
   (var program (parse-program))
   (set program.errors parser.errors)
   program))
+
+
+;; (mod.parse "(5 + 10)")
 
 mod

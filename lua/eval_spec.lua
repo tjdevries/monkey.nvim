@@ -10,9 +10,25 @@ describe("Eval", function()
     eq(5, eval(program).val)
   end)
 
-  pending("should evaluate a boolean", function()
-    local program = parse "true"
+  it("should evaluate a boolean", function()
+    local program = parse "!!true"
+    eq("(!(!true));", program:lit())
+    -- eq({}, program.statements[1])
 
     eq(true, eval(program).val)
+  end)
+
+  it("evaluated grouped expresssion", function()
+    local program = parse "(5 + 10);"
+
+    eq({}, program.errors)
+    eq(15, eval(program).val)
+  end)
+
+  it("evaluated grouped expresssion", function()
+    local program = parse "(5 + 10) * 5;"
+
+    eq({}, program.errors)
+    eq(75, eval(program).val)
   end)
 end)
